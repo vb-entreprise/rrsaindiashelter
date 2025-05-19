@@ -121,14 +121,19 @@ const CreateCasePaper: React.FC = () => {
           </div>
           <div>
             <label className="block text-sm font-medium">Animal Type</label>
-            <input
-              type="text"
+            <select
               name="animal_type"
               value={formData.animal_type}
               onChange={handleChange}
               className="mt-1 block w-full rounded-md border border-gray-300 h-12 text-base px-4"
               required
-            />
+            >
+              <option value="">Select Animal Type</option>
+              <option value="dog">Dog</option>
+              <option value="cat">Cat</option>
+              <option value="bird">Bird</option>
+              <option value="other">Other</option>
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium">Animal Name</label>
