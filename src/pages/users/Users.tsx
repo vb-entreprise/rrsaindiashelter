@@ -5,10 +5,10 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { apiClient } from '../../services/apiClient';
+import { supabase } from '../../services/apiClient';
 
 interface User {
-  id: number;
+  id: string;
   name: string;
   email: string;
   phone: string;
@@ -16,7 +16,7 @@ interface User {
 }
 
 interface Role {
-  id: number;
+  id: string;
   name: string;
 }
 
@@ -30,15 +30,29 @@ const Users: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [form, setForm] = useState<any>(initialForm);
-  const [editId, setEditId] = useState<number | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiClient.get('/users');
-      setUsers(Array.isArray(data) ? data : []);
+      const { data, error } = await supabase
+        .from('users')
+        .select(`
+          *,
+          role_user (
+            role:roles(name)
+          )
+        `);
+      if (error) throw error;
+      
+      const formattedUsers = data?.map(user => ({
+        ...user,
+        role: user.role_user?.[0]?.role?.name
+      })) || [];
+      
+      setUsers(formattedUsers);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -48,9 +62,12 @@ const Users: React.FC = () => {
 
   const fetchRoles = async () => {
     try {
-      const data = await apiClient.get('/roles');
-      setRoles(Array.isArray(data) ? data : []);
-    } catch {}
+      const { data, error } = await supabase.from('roles').select('*');
+      if (error) throw error;
+      setRoles(data || []);
+    } catch (err: any) {
+      console.error('Error fetching roles:', err.message);
+    }
   };
 
   useEffect(() => { fetchUsers(); fetchRoles(); }, []);
@@ -63,8 +80,30 @@ const Users: React.FC = () => {
       return;
     }
     try {
-      const user = await apiClient.post('/users', form) as User;
-      await apiClient.put(`/users/${user.id}/role`, { role_id: form.role_id });
+      // Create user
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .insert([{
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          password: form.password // Note: In a real app, password should be hashed
+        }])
+        .select()
+        .single();
+      
+      if (userError) throw userError;
+
+      // Assign role
+      const { error: roleError } = await supabase
+        .from('role_user')
+        .insert([{
+          user_id: userData.id,
+          role_id: form.role_id
+        }]);
+      
+      if (roleError) throw roleError;
+
       setShowCreate(false);
       setForm(initialForm);
       fetchUsers();
@@ -88,12 +127,35 @@ const Users: React.FC = () => {
       return;
     }
     try {
-      await apiClient.put(`/users/${editId}`, {
-        name: form.name,
-        email: form.email,
-        phone: form.phone,
-      });
-      await apiClient.put(`/users/${editId}/role`, { role_id: form.role_id });
+      // Update user
+      const { error: userError } = await supabase
+        .from('users')
+        .update({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+        })
+        .eq('id', editId);
+      
+      if (userError) throw userError;
+
+      // Update role
+      const { error: roleDeleteError } = await supabase
+        .from('role_user')
+        .delete()
+        .eq('user_id', editId);
+      
+      if (roleDeleteError) throw roleDeleteError;
+
+      const { error: roleInsertError } = await supabase
+        .from('role_user')
+        .insert([{
+          user_id: editId,
+          role_id: form.role_id
+        }]);
+      
+      if (roleInsertError) throw roleInsertError;
+
       setShowEdit(false);
       setEditId(null);
       setForm(initialForm);
@@ -103,12 +165,16 @@ const Users: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = async (userId: number) => {
+  const handleDeleteUser = async (userId: string) => {
     if (!window.confirm('Are you sure you want to delete this user?')) return;
     try {
-      await apiClient.delete(`/users/${userId}`);
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+      if (error) throw error;
       fetchUsers();
-    } catch (err) {
+    } catch (err: any) {
       alert('Failed to delete user');
     }
   };

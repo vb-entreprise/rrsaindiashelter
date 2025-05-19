@@ -5,15 +5,15 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { apiClient } from '../../services/apiClient';
+import { supabase } from '../../services/apiClient';
 
 interface Role {
-  id: number;
+  id: string;
   name: string;
 }
 
 interface Permission {
-  id: number;
+  id: string;
   name: string;
 }
 
@@ -21,7 +21,7 @@ const Roles: React.FC = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
-  const [rolePermissions, setRolePermissions] = useState<number[]>([]);
+  const [rolePermissions, setRolePermissions] = useState<string[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [roleName, setRoleName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -29,23 +29,35 @@ const Roles: React.FC = () => {
 
   const fetchRoles = async () => {
     try {
-      const data = await apiClient.get('/roles');
-      setRoles(Array.isArray(data) ? data : []);
-    } catch {}
+      const { data, error } = await supabase.from('roles').select('*');
+      if (error) throw error;
+      setRoles(data || []);
+    } catch (err: any) {
+      console.error('Error fetching roles:', err.message);
+    }
   };
 
   const fetchPermissions = async () => {
     try {
-      const data = await apiClient.get('/permissions');
-      setPermissions(Array.isArray(data) ? data : []);
-    } catch {}
+      const { data, error } = await supabase.from('permissions').select('*');
+      if (error) throw error;
+      setPermissions(data || []);
+    } catch (err: any) {
+      console.error('Error fetching permissions:', err.message);
+    }
   };
 
-  const fetchRolePermissions = async (roleId: number) => {
+  const fetchRolePermissions = async (roleId: string) => {
     try {
-      const data = await apiClient.get(`/roles/${roleId}/permissions`);
-      setRolePermissions(Array.isArray(data) ? data.map((p: Permission) => p.id) : []);
-    } catch {}
+      const { data, error } = await supabase
+        .from('permission_role')
+        .select('permission_id')
+        .eq('role_id', roleId);
+      if (error) throw error;
+      setRolePermissions(data?.map(p => p.permission_id) || []);
+    } catch (err: any) {
+      console.error('Error fetching role permissions:', err.message);
+    }
   };
 
   useEffect(() => {
@@ -62,7 +74,12 @@ const Roles: React.FC = () => {
       return;
     }
     try {
-      await apiClient.post('/roles', { name: roleName });
+      const { data, error } = await supabase
+        .from('roles')
+        .insert([{ name: roleName, guard_name: 'web' }])
+        .select()
+        .single();
+      if (error) throw error;
       setRoleName('');
       setShowCreate(false);
       setSuccess('Role created successfully');
@@ -79,7 +96,7 @@ const Roles: React.FC = () => {
     setError(null);
   };
 
-  const handlePermissionChange = (permId: number) => {
+  const handlePermissionChange = (permId: string) => {
     setRolePermissions((prev) =>
       prev.includes(permId) ? prev.filter((id) => id !== permId) : [...prev, permId]
     );
@@ -90,7 +107,26 @@ const Roles: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
-      await apiClient.put(`/roles/${selectedRole.id}/permissions`, { permission_ids: rolePermissions });
+      // Delete existing permissions
+      const { error: deleteError } = await supabase
+        .from('permission_role')
+        .delete()
+        .eq('role_id', selectedRole.id);
+      if (deleteError) throw deleteError;
+
+      // Insert new permissions
+      if (rolePermissions.length > 0) {
+        const { error: insertError } = await supabase
+          .from('permission_role')
+          .insert(
+            rolePermissions.map(permId => ({
+              role_id: selectedRole.id,
+              permission_id: permId
+            }))
+          );
+        if (insertError) throw insertError;
+      }
+      
       setSuccess('Permissions updated successfully');
     } catch (err: any) {
       setError(err.message);
@@ -102,7 +138,11 @@ const Roles: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
-      await apiClient.delete(`/roles/${role.id}`);
+      const { error } = await supabase
+        .from('roles')
+        .delete()
+        .eq('id', role.id);
+      if (error) throw error;
       setSuccess('Role deleted successfully');
       if (selectedRole?.id === role.id) setSelectedRole(null);
       fetchRoles();
