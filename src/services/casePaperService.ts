@@ -73,14 +73,21 @@ export const casePaperService = {
   },
 
   async createCasePaper(casePaper: Partial<CasePaper>) {
+    // Remove any attempt to set created_by as it will be set by the trigger
+    const { created_by, ...casePaperData } = casePaper;
+
     const { data, error } = await supabase
       .from('case_papers')
-      .insert([casePaper])
+      .insert([casePaperData])
       .select()
       .single();
 
     if (error) {
-      throw new Error(error.message);
+      // Provide more detailed error message
+      if (error.code === '42501') {
+        throw new Error('You do not have permission to create case papers. Please ensure you are logged in.');
+      }
+      throw new Error(`Failed to create case paper: ${error.message}`);
     }
 
     return data;

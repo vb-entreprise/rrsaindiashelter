@@ -44,7 +44,8 @@ const CreateCasePaper: React.FC = () => {
       toast.success('Case paper created successfully');
       navigate('/case-papers');
     } catch (error) {
-      toast.error('Failed to create case paper');
+      // Display the specific error message from the service
+      toast.error(error instanceof Error ? error.message : 'Failed to create case paper');
       console.error('Error creating case paper:', error);
     } finally {
       setIsSubmitting(false);
